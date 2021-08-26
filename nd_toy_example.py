@@ -246,8 +246,7 @@ with torch.no_grad():
 plt.imshow(sparsity)
 plt.colorbar()
 
-# + id="J3moKj3XqOzf" colab_type="code" colab={}
-
+sys.exit(0)
 
 #### output of ANOVA is by definition zero-means
 # if want to plot data on same scale -> need to add the intercept !!!
