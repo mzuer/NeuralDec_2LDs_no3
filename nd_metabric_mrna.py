@@ -24,7 +24,7 @@ inputfile= os.path.join('/home','marie','Documents','FREITAS_LAB',
                             'VAE_tutos','CancerAI-IntegrativeVAEs',
                             'data','MBdata_33CLINwMiss_1KfGE_1KfCNA.csv')
 
-wd = os.path.join('/home','marie','Documents','FREITAS_LAB','VAE_tutos','NeuralDec')
+wd = os.path.join('/home','marie','Documents','FREITAS_LAB','VAE_tutos','NeuralDec_2LDs_no3')
 os.chdir(wd)
 
 #module_path = r'C:\Users\d07321ow\Google Drive\SAFE_AI\CCE_DART\code\IntegrativeVAEs\code'
@@ -39,8 +39,8 @@ if module_path not in sys.path:
     sys.path.append(module_path)
 
 from ND.encoder import cEncoder
-from ND.decoder import Decoder
-from ND.CVAE import CVAE
+from ND.decoder_ld2 import Decoder
+from ND.CVAE_ld2 import CVAE
 from ND.helpers import expand_grid
 
 from torch.utils.data import TensorDataset, DataLoader
@@ -112,16 +112,16 @@ Y = torch.from_numpy(input_data).float() ### ?? requires float input
 data_dim = Y.shape[1]
 n_covariates = 1
 hidden_dim = 32 # init value: 32
-latent_dim = 1 # init value: 1
+latent_dim = 2 # init value: 1
 
-n_iter_integrals = 25000 # init value 25000 
-logging_freq_integrals = 100 # init value 100
+n_iter_integrals = 100 # init value 25000 
+logging_freq_integrals = 50 # init value 100
 grid_nsteps = 15 # init value 15
 
 bs = 64 # init value 64 (batch size)
 
-min_grid_range = 0.0 # init value -2
-max_grid_range = 1.0 # init value -2
+min_grid_range = -2 # init value -2
+max_grid_range = 2 # init value -2
 
 outsuffix = "_hd" + str(hidden_dim) + "_nLD" + str(latent_dim) +\
  "_c" + str(covarLab) +  "_" + str(n_iter_integrals) + "_" + str(logging_freq_integrals) +"_"+str(grid_nsteps) 
@@ -139,16 +139,27 @@ encoder_mapping = nn.Sequential(
     # torch.nn.Linear(size_in_features, size_out_features, ...)
     nn.Linear(data_dim + n_covariates, hidden_dim),
     nn.ReLU(),
-    nn.Linear(hidden_dim, 2)
+    nn.Linear(hidden_dim, latent_dim*2)
 )
 encoder = cEncoder(z_dim=latent_dim, mapping=encoder_mapping)
 
 ### DECOMPOSABLE DECODER
-grid_z = torch.linspace(min_grid_range, max_grid_range, steps=grid_nsteps).reshape(-1, 1).to(device)
-grid_c = torch.linspace(min_grid_range, max_grid_range, steps=grid_nsteps).reshape(-1, 1).to(device)
-grid_cz = torch.cat(expand_grid(grid_z, grid_c), dim=1).to(device)
 
-decoder_z = nn.Sequential(
+grid_z1 = torch.linspace(-2.0, 2.0, steps=15).reshape(-1, 1).to(device)
+grid_z2 = torch.linspace(-2.0, 2.0, steps=15).reshape(-1, 1).to(device)  # [15,1]
+grid_c = torch.linspace(0, 1, steps=15).reshape(-1, 1).to(device)  # =>> if binary, 0-1
+grid_cz1 = torch.cat(expand_grid(grid_z1, grid_c), dim=1).to(device) # :0 is range of z; :1 is range of c
+grid_cz2 = torch.cat(expand_grid(grid_z2, grid_c), dim=1).to(device)
+grid_z1z2 = torch.cat(expand_grid(grid_z2, grid_z1), dim=1).to(device)
+## ?????? but how to extend the grid in 3d ???
+
+
+decoder_z1 = nn.Sequential(   #### z1 should be feed only with z1 ??!
+    nn.Linear(1, hidden_dim),
+    nn.Tanh(),
+    nn.Linear(hidden_dim, data_dim)
+)
+decoder_z2 = nn.Sequential(
     nn.Linear(1, hidden_dim),
     nn.Tanh(),
     nn.Linear(hidden_dim, data_dim)
@@ -160,18 +171,32 @@ decoder_c = nn.Sequential(
     nn.Linear(hidden_dim, data_dim)
 )
 
-decoder_cz = nn.Sequential(
+decoder_z1z2 = nn.Sequential(
+    nn.Linear(2, hidden_dim),
+    nn.Tanh(),
+    nn.Linear(hidden_dim, data_dim)
+)
+decoder_cz1 = nn.Sequential(
+    nn.Linear(2, hidden_dim),
+    nn.Tanh(),
+    nn.Linear(hidden_dim, data_dim)
+)
+decoder_cz2 = nn.Sequential(
     nn.Linear(2, hidden_dim),
     nn.Tanh(),
     nn.Linear(hidden_dim, data_dim)
 )
 
+
 decoder = Decoder(data_dim, 
-                  grid_z, grid_c, grid_cz, 
-                  #mapping_z, mapping_c, mapping_cz
-                  decoder_z, decoder_c, decoder_cz,
+                 grid_z1=grid_z1, grid_z2=grid_z2, grid_c=grid_c, 
+                 grid_cz1=grid_cz1, grid_cz2=grid_cz2, grid_z1z2=grid_z1z2,
+                 mapping_z1=decoder_z1,  mapping_z2=decoder_z2, mapping_c=decoder_c,
+                 mapping_cz1=decoder_cz1, mapping_cz2=decoder_cz2, 
+                 mapping_z1z2=decoder_z1z2,
                   has_feature_level_sparsity=True, 
-                  p1=0.1, p2=0.1, p3=0.1, # only needed if has_feature_level_sparsity
+                  p1=0.1, p2=0.1, p3=0.1, p4=0.1,
+                  p5=0.1, p6=0.1, p7=0.1, 
                   lambda0=1e2, penalty_type="MDMM",
                   device=device)
 
@@ -207,8 +232,27 @@ integrals.shape
 
 nfeatures = Y.shape[1]
  
-assert integrals.shape[0] == nfeatures * (grid_nsteps * 2 + 2)
+assert integrals.shape[0] == nfeatures * (grid_nsteps * 3 * 2 + 3*1) # was *2 + 2 ###  
+
+# à chaque step les intégrales ont la forme suivante:
+# pour les grid simples (e.g. c, z1, z2) -> je passe les 15 points dans le decoder [15,1]
+# ca me donne un output [1000] reshape en 1 x [1,1000]
+# pour les grids doubles (e.g. cz1, cz2, z1z2) -> c est en 2d on a fait un quadrillage
+# donc la grille est de [15x15=225,2] -> ca donne un output [15x15=225,1000]
+# je reshape en [15,15,1000] (pour chaque feature, j'ai un quadrillage)
+# aggregation en dim 0 et dim 1 (e.g. une fois pour dc, une fois pour dz1) => ca donne 
+# 2x [15,1000] (NB: une aggreg en dim3 donnerait un result de 15x15)
+# donc à chaque step 
+# nbr_decoders_1var * 1 + 15*2*nbr_decoders_2var
+# comme stacké -> * nfeatures
+ 
+#  2* # 2d grid + # 1d grid  cz1,cz2,z1z2=>2d => 2*3 + c, z1, z2 => 1*3               * # networks * 2 + # networks  # or because 2d grid 
 assert integrals.shape[1] == (n_iter_integrals//logging_freq_integrals)
+
+
+#        integrals = np.hstack([int_z1_values, int_z2_values, int_c_values,\
+#                               int_cz1_values, int_cz2_values,int_z1z2_values ]).\
+#                                    reshape(n_iter // logging_freq_int, -1).T
 
 #sys.exit(0)
 
@@ -236,6 +280,72 @@ plt.savefig(out_file_name, dpi=300)
 print('... written: ' + out_file_name)
 plt.close()
 
+
+
+
+
+
+# + id="UEVeue2dzJfZ" colab_type="code" colab={}
+with torch.no_grad():
+    # encoding of the entire observed data set
+    mu_z, sigma_z = encoder(Y.to(device), c.to(device))
+    mu_z1 = mu_z[:,0].reshape(-1,1)
+    mu_z2 = mu_z[:,1].reshape(-1,1)
+    sigma_z1 = sigma_z[:,0].reshape(-1,1)
+    sigma_z2 = sigma_z[:,1].reshape(-1,1)
+    # predictions from the decoder
+    Y_pred = decoder(mu_z1.to(device), mu_z2.to(device), c.to(device))
+
+    # output to CPU
+    mu_z, sigma_z = mu_z.cpu(), sigma_z.cpu()
+    mu_z1, sigma_z1 = mu_z1.cpu(), sigma_z1.cpu()
+    mu_z2, sigma_z2 = mu_z2.cpu(), sigma_z2.cpu()
+    Y_pred = Y_pred.cpu()
+
+# + [markdown] id="vunBdUouYzb3" colab_type="text"
+# ### Correlation between the ground truth $z$ and the inferred $z$ values
+
+# + id="ZWGs64lIlKlr" colab_type="code" colab={"base_uri": "https://localhost:8080/", "height": 282} outputId="20741db6-90f4-42d6-f22a-2fb42e165317"
+#¨plt.scatter(z, mu_z)
+
+# + [markdown] id="IJP-xxIIY8gk" colab_type="text"
+# ### Visualising mappings from z to feature space
+
+# + id="hp9sFzohTXKN" colab_type="code" colab={"base_uri": "https://localhost:8080/", "height": 282} outputId="1c2bc88d-f187-49af-8f4b-29572a5f5c8e"
+plt.scatter(mu_z2, Y_pred[:, 0], c=c.reshape(-1))
+plt.scatter(mu_z1, Y_pred[:, 0], c=c.reshape(-1))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sys.exit(0)
+
+
 # Now let's look at the inferred $z$ values, together with the mappings $z \mapsto \text{features}$
 with torch.no_grad():
     # encoding of the entire observed data set
@@ -254,7 +364,7 @@ with torch.no_grad():
     Y_pred_c = Y_pred_c.cpu()
     Y_pred_cz = Y_pred_cz.cpu()
     Y_pred_z = Y_pred_z.cpu()
-    
+
     
 assert Y_pred.shape[0] == Y.shape[0]
 assert Y_pred.shape[1] == Y.shape[1]
@@ -490,7 +600,7 @@ plt.savefig(out_file_name, dpi=300)
 print('... written: ' + out_file_name)
 plt.close()
 
-sys.exit(0)
+#sys.exit(0)
 
 
 # for the top-ranking of variance explained, decompose the curve

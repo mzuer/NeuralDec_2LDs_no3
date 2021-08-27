@@ -202,6 +202,8 @@ def plot_integrals(integrals):
 
 plot_integrals(integrals)
 
+# 5*(15*3*2+3) = 465
+
 # + [markdown] id="Hk9C7wCHH7PJ" colab_type="text"
 # Now let's look at the inferred $z$ values, together with the mappings $z \mapsto \text{features}$
 

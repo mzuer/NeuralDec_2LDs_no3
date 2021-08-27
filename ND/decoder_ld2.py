@@ -298,20 +298,35 @@ class Decoder(nn.Module):
         with torch.no_grad():
 
             # has shape [1, output_dim]
+            
             int_z1 = self.forward_z1(self.grid_z1).mean(dim=0).reshape(1, self.output_dim).cpu().numpy()
             int_z2 = self.forward_z2(self.grid_z2).mean(dim=0).reshape(1, self.output_dim).cpu().numpy()
 
+            # reshape: convert [1000] -> [1,1000]
+            
             # has shape [1, output_dim]
             # KM: was mapping_c => but this was a bug, should be forward_c
             int_c = self.forward_c(self.grid_c).mean(dim=0).reshape(1, self.output_dim).cpu().numpy()
 
             m1 = self.n_grid_z1
             m2 = self.n_grid_c
-            out = self.forward_cz1_concat(self.grid_cz1)
+            out = self.forward_cz1_concat(self.grid_cz1) # :0 is range of z, :1 is range of c
+            print("out.shape")
+            print(out.shape)
+            print("-ok")
             out = out.reshape(m1, m2, self.output_dim)
+            print("out_reshaped.shape")
+            print(out.shape)
+            print("-ok")
             int_cz1_dc = out.mean(dim=1).cpu().numpy()
             int_cz1_dz1 = out.mean(dim=0).cpu().numpy()
-            
+            print("int_cz1_dc")
+            print(int_cz1_dc.shape)
+            print("-ok")
+            print("int_cz1_dz")
+            print(int_cz1_dc.shape)
+            print("-ok")
+
             m1 = self.n_grid_z2
             m2 = self.n_grid_c
             out = self.forward_cz2_concat(self.grid_cz2)
@@ -334,9 +349,51 @@ class Decoder(nn.Module):
             int_cz2 = np.vstack((int_cz2_dc, int_cz2_dz2))
             int_z1z2 = np.vstack((int_z1z2_dz2, int_z1z2_dz1))
 
-            
+            print("int_z1.shape")
+            print(int_z1.shape)
+            print("int_z2.shape")
+            print(int_z2.shape)
+            print("int_c.shape")
+            print(int_c.shape)
+            print("int_cz1.shape")
+            print(int_cz1.shape)
+            print("int_cz2.shape")
+            print(int_cz2.shape)
+            print("int_z1z2.shape")
+            print(int_z1z2.shape)
+            sys.exit(0)
         return int_z1, int_z2, int_c, int_cz1, int_cz2, int_z1z2
 
+
+
+# =============================================================================
+# print("self.forward_z1(self.grid_z1).shape")
+# torch.Size([15, 1000])
+# int_z1.shape
+# (1, 1000)
+# int_z2.shape
+# (1, 1000)
+# int_c.shape
+# (1, 1000)
+# int_cz1.shape
+# (30, 1000)
+# int_cz2.shape
+# (30, 1000)
+# int_z1z2.shape
+# (30, 1000)
+# =============================================================================
+# out.shape
+# torch.Size([225, 1000])
+# out_reshaped.shape
+# torch.Size([15, 15, 1000])
+# =============================================================================
+# int_cz1_dc
+# (15, 1000)
+# int_cz1_dz
+# (15, 1000)
+# # =============================================================================
+# =============================================================================
+# =============================================================================
 
     def calculate_penalty(self):
 #                 return int_z1, int_z2, int_c, int_cz1_dc, int_cz1_dz1,
